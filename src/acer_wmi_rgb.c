@@ -1,6 +1,5 @@
 //#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#include <acpi/video.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -8,18 +7,8 @@
 #include <linux/types.h>
 #include <linux/dmi.h>
 #include <linux/fb.h>
-#include <linux/backlight.h>
-#include <linux/leds.h>
-#include <linux/platform_device.h>
-#include <linux/acpi.h>
-#include <linux/i8042.h>
-#include <linux/rfkill.h>
-#include <linux/workqueue.h>
-#include <linux/debugfs.h>
-#include <linux/slab.h>
 #include <linux/input.h>
 #include <linux/cdev.h>
-#include <linux/input/sparse-keymap.h>
 #include <linux/version.h>
 
 MODULE_VERSION("1.0");
@@ -28,10 +17,17 @@ MODULE_DESCRIPTION("Acer Laptop WMI RGB Keyboard Driver");
 MODULE_LICENSE("GPL");
 MODULE_SOFTDEP("pre: acer-wmi");
 
+// Allow reset default settings at resuming of hibernation, the number is the max default length string
+//#define HIBERNATION 256
+
 // Init parameter
 static char *init_conf = NULL;
 MODULE_PARM_DESC(init_conf, "Init configuration string"); 
-module_param(init_conf, charp, 0000); 
+module_param(init_conf, charp, 0000);
+
+#ifdef HIBERNATION
+static char default_conf[HIBERNATION] = {0};
+#endif
 
 
 /*
@@ -237,7 +233,7 @@ static int acer_wmi_rgb_read_color(const struct file *file, const char __user *b
 
 // Parsing message and writing to HW
 static ssize_t acer_wmi_rgb_dev_write(struct file *file, const char __user *buf, size_t count, loff_t *offset) {
-	//pr_info("%s Parsing text of size %lu and offset %lli and valid file is %s\n", KBUILD_MODNAME, count, *offset, (file != NULL)?"true":"false");
+	pr_info("%s Parsing text of size %lu and offset %lli from %llu and valid file is %s\n", KBUILD_MODNAME, count, *offset, (unsigned long long)buf, (file != NULL)?"true":"false");
 	size_t read = 0;
 	union U_Writing mode;
 	const struct acpi_buffer mode_buffer = {sizeof(mode), &mode};
@@ -375,12 +371,14 @@ static void __exit acer_wmi_rgb_dev_exit(void)
 		unregister_chrdev_region(kbrgb_dev, 1);
 }
 
+#ifdef HIBERNATION
 // PM notif callback function
 static int pm_callback(struct notifier_block *nb, unsigned long action, void *data)
 {
-	if (action == PM_POST_HIBERNATION && init_conf != NULL && strlen(init_conf) > 0) {
+	if (action == PM_POST_HIBERNATION && strlen(default_conf) > 0) {
 		// Restoring keyboard color status after hibernation
-		acer_wmi_rgb_dev_write(NULL, init_conf, strlen(init_conf), 0);
+		pr_info("%s Setting default configuration of %lu length at module restoring from hibernation (%s)\n", KBUILD_MODNAME, strlen(default_conf), default_conf);
+		acer_wmi_rgb_dev_write(NULL, default_conf, strlen(default_conf), 0);
 	}
 	return 0;
 }
@@ -390,12 +388,12 @@ static struct notifier_block notif_block = {
 		.notifier_call = pm_callback,
 		.priority = 0
 };
-
+#endif
 
 // Module functions
 int init_module(void) 
 {
-	pr_info("%s Init\n", KBUILD_MODNAME);
+	pr_info("%s Loading\n", KBUILD_MODNAME);
 	int err;
 	if (!wmi_has_guid(WMID_GUID4)) {
 		pr_alert("This computer has no needed ACER WMI fuctionality");
@@ -406,22 +404,31 @@ int init_module(void)
 	if (err != 0) {
 		return err;		
 	}
-
 	
 	if ((init_conf != NULL) && (strlen(init_conf) > 0)) {
 		loff_t offset = 0;
+		pr_info("%s Setting default configuration of %lu length at module loading (%s)\n", KBUILD_MODNAME, strlen(init_conf), init_conf);
 		acer_wmi_rgb_dev_write(NULL, init_conf, strlen(init_conf), &offset);
+#ifdef HIBERNATION
+		if (strlen(init_conf) < HIBERNATION)
+			strncpy(default_conf, init_conf, strlen(init_conf));
+		else
+			pr_warn("%s Default configuration string length (%lu) is bigger than max allowed (%u) to keep it. Default configuration will be not restored after hibernation.\n", KBUILD_MODNAME, strlen(init_conf), HIBERNATION);
+#endif		
 	}
 	
 	//kstrtob(); can't use because it needs null terminated string
-
+#ifdef HIBERNATION
 	register_pm_notifier(&notif_block);
+#endif
     return 0; 
 } 
  
 void cleanup_module(void) 
 {
 	acer_wmi_rgb_dev_exit();
+#ifdef HIBERNATION	
 	unregister_pm_notifier(&notif_block);
-    pr_info("%s End\n", KBUILD_MODNAME);
+#endif
+    pr_info("%s Unloaded\n", KBUILD_MODNAME);
 } 

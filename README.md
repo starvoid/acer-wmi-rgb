@@ -87,7 +87,7 @@ c 128 250 63 m 2
 ```
 'm': Mode [0..5]
 'v': Velocity [0..9]
-'t': Brightness [0..100]
+'b': Brightness [0..100]
 'd': Direction [1..2]
 'c': Color [0..255] [0..255] [0..255]
 'z': Zone [1..4] [0..255] [0..255] [0..255]
@@ -133,10 +133,13 @@ All the modes uses brightness.
 A mode has to be set always, if not, mode 0 will be understood, that is, the command: `b90` will set mode to 0 (static) and set brightness to 90 also.
 
 ### Default settings
-The module is able to restore the default settings (mode, color schema, brightness, etc) configuration in each boot (including resuming from hibernation), despite the current settings modified sending string to /dev/acer-kb-rgb-0.
+The module is able to restore the default settings (mode, color schema, brightness, etc) configuration in each boot, despite the current settings modified sending string to /dev/acer-kb-rgb-0.
 
 This default configuration is set when the module is installed using module.sh with the commands install or install_dkms.
 
 Once installed, to change the default (and current) settings you don't need to re-install the module (but you can), simply call `# module.sh default new_default_string_command`.
+
+#### Hibernation
+Right now, the feature of restoring default configuration on hibernation resume is not set. There are a define in the code commented out. This feature is disabled because it makes hang the boot process on restoring from hibernation. Working on it
 ___
 
