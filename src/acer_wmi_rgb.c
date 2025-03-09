@@ -17,18 +17,10 @@ MODULE_DESCRIPTION("Acer Laptop WMI RGB Keyboard Driver");
 MODULE_LICENSE("GPL");
 MODULE_SOFTDEP("pre: acer-wmi");
 
-// Allow reset default settings at resuming of hibernation, the number is the max default length string
-//#define HIBERNATION 256
-
 // Init parameter
 static char *init_conf = NULL;
 MODULE_PARM_DESC(init_conf, "Init configuration string"); 
 module_param(init_conf, charp, 0000);
-
-#ifdef HIBERNATION
-static char default_conf[HIBERNATION] = {0};
-#endif
-
 
 /*
  * Magic Number
@@ -130,7 +122,7 @@ static const union U_Writing defaults = {
 };
 
 // offset inside WMI struct
-static char acer_wmi_rgp_map(const char in) {
+static char acer_wmi_command_map(const char in) {
 	switch (in) {
 		case 'm': // Mode
 			return 0;
@@ -233,7 +225,8 @@ static int acer_wmi_rgb_read_color(const struct file *file, const char __user *b
 
 // Parsing message and writing to HW
 static ssize_t acer_wmi_rgb_dev_write(struct file *file, const char __user *buf, size_t count, loff_t *offset) {
-	pr_info("%s Parsing text of size %lu and offset %lli from %llu and valid file is %s\n", KBUILD_MODNAME, count, *offset, (unsigned long long)buf, (file != NULL)?"true":"false");
+	// This function is called from device (from user land) and from inside this code.
+	// When it call from this code, both file and offset is set to null. Be carefull with them.
 	size_t read = 0;
 	union U_Writing mode;
 	const struct acpi_buffer mode_buffer = {sizeof(mode), &mode};
@@ -275,7 +268,7 @@ static ssize_t acer_wmi_rgb_dev_write(struct file *file, const char __user *buf,
 				return err;
 			mode.W.M.color = color;
 		} else {
-			u8 command = acer_wmi_rgp_map(buffer);
+			u8 command = acer_wmi_command_map(buffer);
 			if (command == 0xff) {
 				pr_err("%s Not acceptable message at pos %lu\n", KBUILD_MODNAME, read - 1);
 				return -3;
@@ -289,7 +282,7 @@ static ssize_t acer_wmi_rgb_dev_write(struct file *file, const char __user *buf,
 	}
 	mode.Bytes[9] = 1;
 
-	//for (int i = 0; i < 10; i++)
+	//for (int i = 0; i < sizeof(mode); i++)
 	//	pr_info("%s Setting byte: %d --> %d\n", KBUILD_MODNAME, i, mode.Bytes[i]);
 	st = wmi_evaluate_method(WMID_GUID4, 0, ACER_WMID_SET_GAMINGKBBL_METHODID, &mode_buffer, NULL);
 	if (st < 0) {
@@ -371,14 +364,13 @@ static void __exit acer_wmi_rgb_dev_exit(void)
 		unregister_chrdev_region(kbrgb_dev, 1);
 }
 
-#ifdef HIBERNATION
 // PM notif callback function
 static int pm_callback(struct notifier_block *nb, unsigned long action, void *data)
 {
-	if (action == PM_POST_HIBERNATION && strlen(default_conf) > 0) {
+	if (action == PM_POST_HIBERNATION && init_conf != NULL) {
 		// Restoring keyboard color status after hibernation
-		pr_info("%s Setting default configuration of %lu length at module restoring from hibernation (%s)\n", KBUILD_MODNAME, strlen(default_conf), default_conf);
-		acer_wmi_rgb_dev_write(NULL, default_conf, strlen(default_conf), 0);
+		//pr_info("%s Setting default configuration of %lu length at restoring from hibernation (%s)\n", KBUILD_MODNAME, strlen(init_conf), init_conf);
+		acer_wmi_rgb_dev_write(NULL, init_conf, strlen(init_conf), NULL);	
 	}
 	return 0;
 }
@@ -388,7 +380,6 @@ static struct notifier_block notif_block = {
 		.notifier_call = pm_callback,
 		.priority = 0
 };
-#endif
 
 // Module functions
 int init_module(void) 
@@ -396,39 +387,28 @@ int init_module(void)
 	pr_info("%s Loading\n", KBUILD_MODNAME);
 	int err;
 	if (!wmi_has_guid(WMID_GUID4)) {
-		pr_alert("This computer has no needed ACER WMI fuctionality");
-		return -1;
+		pr_alert("This computer has no needed ACER WMI functionality");
+		return ENODEV;;
 	}
 
 	err = acer_wmi_rgb_dev_init();
 	if (err != 0) {
-		return err;		
+		return err;
 	}
 	
 	if ((init_conf != NULL) && (strlen(init_conf) > 0)) {
-		loff_t offset = 0;
-		pr_info("%s Setting default configuration of %lu length at module loading (%s)\n", KBUILD_MODNAME, strlen(init_conf), init_conf);
-		acer_wmi_rgb_dev_write(NULL, init_conf, strlen(init_conf), &offset);
-#ifdef HIBERNATION
-		if (strlen(init_conf) < HIBERNATION)
-			strncpy(default_conf, init_conf, strlen(init_conf));
-		else
-			pr_warn("%s Default configuration string length (%lu) is bigger than max allowed (%u) to keep it. Default configuration will be not restored after hibernation.\n", KBUILD_MODNAME, strlen(init_conf), HIBERNATION);
-#endif		
+		//pr_info("%s Setting default configuration of %lu length at module loading (%s)\n", KBUILD_MODNAME, strlen(init_conf), init_conf);
+		acer_wmi_rgb_dev_write(NULL, init_conf, strlen(init_conf), NULL);
 	}
 	
 	//kstrtob(); can't use because it needs null terminated string
-#ifdef HIBERNATION
 	register_pm_notifier(&notif_block);
-#endif
     return 0; 
 } 
  
 void cleanup_module(void) 
 {
 	acer_wmi_rgb_dev_exit();
-#ifdef HIBERNATION	
 	unregister_pm_notifier(&notif_block);
-#endif
     pr_info("%s Unloaded\n", KBUILD_MODNAME);
 } 

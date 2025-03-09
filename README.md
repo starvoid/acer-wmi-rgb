@@ -140,6 +140,6 @@ This default configuration is set when the module is installed using module.sh w
 Once installed, to change the default (and current) settings you don't need to re-install the module (but you can), simply call `# module.sh default new_default_string_command`.
 
 #### Hibernation
-Right now, the feature of restoring default configuration on hibernation resume is not set. There are a define in the code commented out. This feature is disabled because it makes hang the boot process on restoring from hibernation. Working on it
+The default keyboard color scheme is set both at normal boot and al resuming from hibernation boot.
 ___
 
