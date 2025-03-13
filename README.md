@@ -135,7 +135,7 @@ A mode has to be set always, if not, mode 0 will be understood, that is, the com
 ### Default settings
 The module is able to restore the default settings (mode, color schema, brightness, etc) configuration in each boot, despite the current settings modified sending string to /dev/acer-kb-rgb-0.
 
-This default configuration is set when the module is installed using module.sh with the commands install or install_dkms.
+This default configuration is set when the module is installed using module.sh with the commands install or dkms_install.
 
 Once installed, to change the default (and current) settings you don't need to re-install the module (but you can), simply call `# module.sh default new_default_string_command`.
 
